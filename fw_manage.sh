@@ -196,8 +196,6 @@ elif [ "$MODE" == "backup" ]; then
     sleep 2
 
     echo -e "\e[32mBACKUP >>>\e[0m Dumping PSQL"
-    #/usr/local/filewave/postgresql/bin/pg_dump -U postgres -d mdm -f $DESTINATION/DB/mdm-dump.sql
-    #/usr/local/filewave/postgresql/bin/pg_dump -U postgres -Fc -c mdm -f $DESTINATION/DB/mdm-dump.dump
     /usr/local/filewave/postgresql/bin/pg_dump -U django -f $DESTINATION/mdm-dump.dump --encoding=utf8 mdm
     echo -e "\e[32mBACKUP >>>\e[0m stopping postgresql"
     /usr/local/bin/fwcontrol postgres stop
@@ -321,13 +319,8 @@ elif [ "$MODE" == "restore" ] && [ ! -z $RESTORE ]; then
             /usr/local/bin/fwcontrol server start
             sleep 3
             echo -e "\e[32mRESTORE >>> Database >>>\e[0m restoring"
-            #/usr/local/filewave/postgresql/bin/psql -U postgres -f $restore_path/DB/mdm-dump.sql
-            #/usr/local/filewave/postgresql/bin/pg_restore -U postgres -n public -c -1 -d mdm $restore_path/DB/mdm-dump.dump
-            #/usr/local/filewave/postgresql/bin/pg_restore -U postgres -d mdm -c -1 $restore_path/DB/mdm-dump.dump
 
             echo -e "\e[32mRESTORE >>> Database >>>\e[0m drop MDM"
-            #/usr/local/filewave/postgresql/bin/psql postgres postgres -c 'drop database mdm;'
-            #/usr/local/filewave/postgresql/bin/psql postgres postgres -c 'SELECT pg_terminate_backend(pg_stat_activity.pid) FROM pg_stat_activity WHERE pg_stat_activity.datname = "mdm" AND pid <> pg_backend_pid();'
             /usr/local/filewave/postgresql/bin/psql postgres postgres -c 'ALTER DATABASE mdm CONNECTION LIMIT 0;'
 
             echo -e "\e[32mRESTORE >>> Database >>>\e[0m make MDM"
@@ -346,8 +339,6 @@ elif [ "$MODE" == "restore" ] && [ ! -z $RESTORE ]; then
             /usr/local/filewave/postgresql/bin/psql mdm postgres -f $restore_path/mdm-dump.dump
 
             echo -e "\e[32mRESTORE >>> Database >>>\e[0m DB done"
-            #/usr/local/bin/fwcontrol postgres stop
-            #sleep 2
             /usr/local/bin/fwcontrol server restart
             sleep 2
         else
