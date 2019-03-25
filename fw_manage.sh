@@ -24,7 +24,7 @@ function error_syntax
 {
 echo -e "\033[0;31mERROR >>>\033[0m in statement\n"
 echo -e "$0 [-bfhmrv]"
-echo -e "   [-m mode [setup -v <version> -h <hostname>] [backup] [remove] [restore -r <date>] [beta -b FILE] [clean] "
+echo -e "   [-m mode [setup -v <version> -h <hostname>] [update -v <version>] [backup] [remove] [restore -r <date>] [beta -b FILE] [clean] "
 echo -e "   [-h hostname for setup] [-v version for setup] [-r date to use in restore] [-b path to beta rpm]"
 echo -e "   [-f force] [-a aws this is an aws instance]"
 echo -e "\nThis command must also be run as root on CentOS"
@@ -97,6 +97,11 @@ function var_debug
     fi
 }
 
+function do_permissions
+{
+    chown apache:apache /usr/local/filewave/certs/apn.* /usr/local/filewave/certs/db_symmetric_key.aes /usr/local/filewave/certs/dep.* /usr/local/filewave/certs/engage_apn_*.* /usr/local/filewave/certs/server.*
+    chown postgres:daemon /usr/local/filewave/certs/postgres.*
+}
 
 ## GET OPTIONS
 
@@ -419,6 +424,10 @@ elif [ "$MODE" == "restore" ] && [ ! -z $RESTORE ]; then
 
             echo -e "\033[0;32mRESTORE >>> Database >>>\033[0m DB done"
             /usr/local/bin/fwcontrol postgres stop
+
+            echo -e "\033[0;32mRESTORE >>> Permissions >>>\033[0m DB Starting"
+            do_permissions
+            echo -e "\033[0;32mRESTORE >>> Permissions >>>\033[0m DB Starting"
             sleep 2
             /usr/local/bin/fwcontrol server start
             sleep 2
@@ -510,7 +519,13 @@ elif [ "$MODE" == "clean" ]; then
         exit 1
     fi
 
-
+elif [ "$MODE" == "update" ] && [ ! -z "$VERSION" ]; then
+    if [ $DEBUG == true ]; then
+        var_debug
+    fi
+    if [ -d "/fwxserver/" ]; then
+        install_server
+    fi
 else
     error_syntax
     exit 1
