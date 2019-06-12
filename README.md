@@ -45,3 +45,8 @@ Vacuum the DB and removes logs taking up space
 ```
 ./fw_manage.sh -m clean
 ```
+### Update
+Updates a current server to the the specified version (recomended to backup first)
+```
+./fw_manage.sh -m update -v 13.1.0
+```
