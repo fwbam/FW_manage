@@ -61,7 +61,7 @@ Delete all traces of FileWave on the server
 ### Restore
 Restore from a backup
 ```
-./fw_manage.sh -m restore -r 2018-08-03
+./fw_manage.sh -m restore -r 2019-07-01_v13.0.3
 ```
 
 ### Beta
