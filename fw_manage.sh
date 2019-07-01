@@ -24,7 +24,7 @@ function error_syntax
 {
 echo -e "\033[0;31mERROR >>>\033[0m in statement\n"
 echo -e "$0 [-bfhmrv]"
-echo -e "   [-m mode [setup -v <version> -h <hostname>] [update -v <version>] [backup] [remove] [restore -r <date>] [beta -b FILE] [clean] "
+echo -e "   [-m mode [setup -v <version> -h <hostname>] [update -v <version>] [backup] [remove] [restore -r <date>] [beta -b FILE] [clean] [admin] [renew]"
 echo -e "   [-h hostname for setup] [-v version for setup] [-r date to use in restore] [-b path to beta rpm]"
 echo -e "   [-f force] [-a aws this is an aws instance]"
 echo -e "\nThis command must also be run as root on CentOS"
@@ -97,12 +97,77 @@ function var_debug
     fi
 }
 
+#Permissions adapted from ChristianG fixPermissions script
 function do_permissions
 {
     chown apache:apache /usr/local/filewave/certs/apn.* /usr/local/filewave/certs/db_symmetric_key.aes /usr/local/filewave/certs/dep.* /usr/local/filewave/certs/engage_apn_*.* /usr/local/filewave/certs/server.*
     chown postgres:daemon /usr/local/filewave/certs/postgres.*
+
+    echo -n "Fixing fwxserver folder permissions"
+    chown root:wheel /fwxserver
+    find /fwxserver -maxdepth 1 -type d -exec /bin/chmod 755 {} \;
+    echo "  Done"
+
+    echo -n "Fixing Data Folder Ownership"
+    chown -R root:wheel /fwxserver/Data\ Folder
+    echo "  Done"
+    echo -n "Fixing Data Folder File Access Rights"
+    find /fwxserver/Data\ Folder -type f -print0|xargs -0 /bin/chmod 644
+    echo "  Done"
+    echo -n "Fixing Data Folder Subfolder Access Rights"
+    find /fwxserver/Data\ Folder -type d -print0|xargs -0 /bin/chmod 755
+    echo "  Done"
+
+    echo -n "Fixing DB folder permissions"
+    #the apache user and group are called apache on linux, but _www on mac
+    APACHENAME="apache"
+    if [ "$(uname -a |grep Darwin|wc -l)" -eq "1" ] ; then APACHENAME="_www" ; fi
+    chown root:$APACHENAME /fwxserver/DB
+    chmod g+w /fwxserver/DB
+    echo "  Done"
+
+    version=$(/usr/local/sbin/fwxserver -V |awk {'print $2'}| sed -e "s/\.//g")
+    if [ "$version" -ge "570" ]; then
+        echo -n "Postgres installation found, fixing pg_data permissions"
+        chown -R postgres:daemon /fwxserver/DB/pg_data
+        find /fwxserver/DB/pg_data -type f -print0|xargs -0 /bin/chmod 600
+        find /fwxserver/DB/pg_data -type d -print0|xargs -0 /bin/chmod 700
+        echo "  Done"
+        echo "Fixing MDM directory ownership"
+        cd /usr/local/filewave
+        echo -n "Fixing log,certs,ipa directory ownership & permissions"
+        chown -R $APACHENAME:$APACHENAME log certs ipa
+        chown postgres:daemon certs/postgres.*
+        chmod 775 log certs ipa
+            chmod 664 certs/dummy.* certs/server.*
+            chmod 600 certs/apn.key
+            chmod 644 certs/apn.crt
+            chmod 664 certs/postgres.crt
+            chmod 600 certs/postgres.key
+            chmod 664 log/*
+        echo " Done"
+        echo -n "Fixing bin & django ownership & permissions"
+        chown -R root:wheel bin postgresql
+            chmod a+x bin/*
+            chown postgres:daemon postgresql/conf postgresql/log
+        chown -R root:$APACHENAME python django
+        echo "  Done"
+    fi
 }
 
+
+function get_linux_admin {
+    # ToDo match installed version with requested version
+    echo -e "\033[0;32mSETUP >>>\033[0m Downloading Linux Admin: $VERSION"
+    if [ ! -f "/filewave-admin-$VERSION-1.0.x86_64.rpm" ]; then
+        wget https://fwdl.filewave.com/$VERSION/filewave-admin-$VERSION-1.0.x86_64.rpm
+    else
+        echo -e "\033[0;32mSETUP >>>\033[0m ALREADY DOWNLOADED"
+    fi
+    echo -e "\033[0;32mSETUP >>>\033[0m Installing Linux Admin Version: $VERSION"
+    yum install -y --nogpgcheck filewave-admin-$VERSION-1.0.x86_64.rpm
+
+}
 ## GET OPTIONS
 
 
@@ -192,7 +257,8 @@ if [ "$MODE" == "setup" ] && [ ! -z "$VERSION" ] && [ ! -z "$SETHOSTNAME" ]; the
         cp /etc/letsencrypt/live/*/privkey.pem /usr/local/filewave/certs/server.key
 
         echo -e "\033[0;32mSETUP >>>\033[0m Settings certs as trusted"
-        echo "from ios.preferences_manager import PreferencesManager ; PreferencesManager.set_mdm_server_host('preview.filewave.com') ; PreferencesManager.set_mdm_cert_trusted(True)" | /usr/local/filewave/python/bin/python /usr/local/filewave/django/manage.pyc shell
+        sleep 2
+        echo "from ios.preferences_manager import PreferencesManager ; PreferencesManager.set_mdm_server_host('$SETHOSTNAME') ; PreferencesManager.set_mdm_cert_trusted(True)" | /usr/local/filewave/python/bin/python /usr/local/filewave/django/manage.pyc shell
 
         echo -e "\033[0;32mSETUP >>>\033[0m Restarting Apache"
         /usr/local/filewave/apache/bin/apachectl restart
@@ -256,7 +322,7 @@ elif [ "$MODE" == "backup" ]; then
     echo -e "\033[0;32mBACKUP >>>\033[0m Dumping PSQL"
     #/usr/local/filewave/postgresql/bin/pg_dump -U postgres -d mdm -f $DESTINATION/DB/mdm-dump.sql
     #/usr/local/filewave/postgresql/bin/pg_dump -U postgres -Fc -c mdm -f $DESTINATION/DB/mdm-dump.dump
-    /usr/local/filewave/postgresql/bin/pg_dump -U django -f $DESTINATION/mdm-dump.dump --encoding=utf8 mdm
+    /usr/local/filewave/postgresql/bin/pg_dump -U django -d mdm -f $DESTINATION/mdm-dump.dump --encoding=utf8
     echo -e "\033[0;32mBACKUP >>>\033[0m stopping postgresql"
     /usr/local/bin/fwcontrol postgres stop
     sleep 2
@@ -291,7 +357,7 @@ elif [ "$MODE" == "backup" ]; then
 
     echo -e "\033[0;32mBACKUP >>>\033[0m DONE with backup process \033[0;32m<<<\033[0m"
 
-
+# ToDO: Build in a check that everything is there
 
 # Erase current version
 
@@ -314,7 +380,7 @@ elif [ "$MODE" == "remove" ]; then
         echo -e "\033[0;32mREMOVE >>> DESTROY >>> \033[0m Stopping FileWave"
         /usr/local/bin/fwcontrol server stop
         sleep 5
-        echo -e "\033[0;32mREMOVE >>> DESTROY >>> \033[0m Uninstalling FileWave"
+        echo -e "\033[0;32mREMOVE >>> DESTROY >>> \033[0m Uninstalling FileWave Server"
         yum -y remove fwxserver
         rm -rf /fwxserver
         rm -rf /usr/local/filewave
@@ -323,6 +389,10 @@ elif [ "$MODE" == "remove" ]; then
         rm /sbin/fwcontrol
         # ToDo remove certbot from /etc/crontab if it is there
         # ToDo remove aws /etc/cloud/cloud.cfg if it is there
+
+        echo -e "\033[0;32mREMOVE >>> DESTROY >>> \033[0m Uninstalling FileWave Admin"
+        yum -y remove filewave-admin
+
     else
         echo -e "\033[0;31mREMOVE >>> ERROR >>> \033[0m YES not not entered. Aborting..."
         exit 1
@@ -383,13 +453,13 @@ elif [ "$MODE" == "restore" ] && [ ! -z $RESTORE ]; then
             cp -rv $restore_path/passwd .
 
             echo -e "\033[0;32mRESTORE >>> Moving Files >>>\033[0m Data Folder..."
-            rsync -avL $restore_path/Data\ Folder /fwxserver/Data\ Folder
+            rsync -avL $restore_path/Data\ Folder/ /fwxserver/Data\ Folder
 
             echo -e "\033[0;32mRESTORE >>> Moving Files >>>\033[0m IPA Folder..."
-            rsync -avL $restore_path/ipa /usr/local/filewave/ipa/
+            rsync -avL $restore_path/ipa/ /usr/local/filewave/ipa
 
             echo -e "\033[0;32mRESTORE >>> Moving Files >>>\033[0m media Folder..."
-            rsync -avL $restore_path/media /usr/local/filewave/media/
+            rsync -avL $restore_path/media/ /usr/local/filewave/media
 
             echo -e "\033[0;32mRESTORE >>> Database >>>\033[0m Starting DB restore"
             /usr/local/bin/fwcontrol server stop
@@ -397,7 +467,6 @@ elif [ "$MODE" == "restore" ] && [ ! -z $RESTORE ]; then
             /usr/local/bin/fwcontrol postgres start
             sleep 3
             #echo -e "\033[0;32mRESTORE >>> Database >>>\033[0m restoring"
-
             #/usr/local/filewave/postgresql/bin/psql -U postgres -f $restore_path/DB/mdm-dump.sql
             #/usr/local/filewave/postgresql/bin/pg_restore -U postgres -n public -c -1 -d mdm $restore_path/DB/mdm-dump.dump
             #/usr/local/filewave/postgresql/bin/pg_restore -U postgres -d mdm -c -1 $restore_path/DB/mdm-dump.dump
@@ -414,23 +483,31 @@ elif [ "$MODE" == "restore" ] && [ ! -z $RESTORE ]; then
             #/usr/local/filewave/postgresql/bin/psql mdm postgres -c 'CREATE EXTENSION IF NOT EXISTS citext SCHEMA;'
 
             echo -e "\033[0;32mRESTORE >>> Database >>>\033[0m restore dump"
-            /usr/local/filewave/postgresql/bin/psql mdm postgres -f $restore_path/mdm-dump.dump
+            #/usr/local/filewave/postgresql/bin/psql mdm postgres -f $restore_path/mdm-dump.dump
+            /usr/local/filewave/postgresql/bin/psql -U postgres mdm < $restore_path/mdm-dump.dump
 
             echo -e "\033[0;32mRESTORE >>> Database >>>\033[0m sync DB"
             /usr/local/filewave/python/bin/python /usr/local/filewave/django/manage.pyc syncdb --noinput
 
             echo -e "\033[0;32mRESTORE >>> Database >>>\033[0m migrate"
-            /usr/local/filewave/python/bin/python /usr/local/filewave/django/manage.pyc migrate --noinput --fake-initial
+            # PRE 12.1/usr/local/filewave/python/bin/python /usr/local/filewave/django/manage.pyc migrate --noinput --fake-initial
+
+            /usr/local/filewave/python/bin/python /usr/local/filewave/django/manage.pyc makemigrations
+            /usr/local/filewave/python/bin/python /usr/local/filewave/django/manage.pyc migrate
+            /usr/local/sbin/fwxserver -M
 
             echo -e "\033[0;32mRESTORE >>> Database >>>\033[0m DB done"
             /usr/local/bin/fwcontrol postgres stop
 
-            echo -e "\033[0;32mRESTORE >>> Permissions >>>\033[0m DB Starting"
+            echo -e "\033[0;32mRESTORE >>> Permissions >>>\033[0m Start"
             do_permissions
-            echo -e "\033[0;32mRESTORE >>> Permissions >>>\033[0m DB Starting"
+            echo -e "\033[0;32mRESTORE >>> Permissions >>>\033[0m End"
             sleep 2
+            echo -e "\033[0;32mRESTORE >>> Server >>>\033[0m Starting"
             /usr/local/bin/fwcontrol server start
             sleep 2
+            echo -e "\033[0;32mRESTORE >>> Server >>>\033[0m Migration check"
+            /usr/local/sbin/fwxserver -M
         else
             error_notFound
         fi
@@ -519,16 +596,90 @@ elif [ "$MODE" == "clean" ]; then
         exit 1
     fi
 
+# Update the server, update linux admin, and then upload upgrade filesets
+
 elif [ "$MODE" == "update" ] && [ ! -z "$VERSION" ]; then
+    # ToDo check for a recent update (with in 1 day) before doing update
     if [ $DEBUG == true ]; then
         var_debug
     fi
     if [ -d "/fwxserver/" ]; then
         install_server
+    else
+        error_fwdir
     fi
+
+    # Upgrade filesets
+    echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
+    echo -e "Do you want to bring in the \033[0;31m Upgrade Filesets \033[0m"
+    echo -e "or \033[0;32m y \033[0m or \033[0;31m n \033[0m abort "
+    echo -e "this will need to install the admin app "
+    echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
+    read DataAnswer
+    if [ $DataAnswer == "y" ]; then
+
+        if [[ ! -f /usr/local/bin/FileWaveAdmin ]]; then
+            echo -e "\033[0;32mUPDATE >>>\033[0m Getting Admin app"
+            get_linux_admin
+        else
+            echo -e "\033[0;32mUPDATE >>>\033[0m Admin already installed"
+        fi
+
+        echo -e "\033[0;32mUPDATE >>>\033[0m Getting upgrade filesets"
+
+        echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
+        echo -e "Paste the \033[0;31m macOS Upgrade Fileset \033[0m URL"
+        echo -e "or \033[0;31m cancel \033[0m to abort "
+        echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
+        read DataAnswer
+        if [ $DataAnswer == "cancel" ]; then
+            exit 1
+        else
+            wget $DataAnswer
+        fi
+        echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
+        echo -e "Paste the \033[0;31m Windows Upgrade Fileset \033[0m URL"
+        echo -e "or \033[0;31m cancel \033[0m to abort "
+        echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
+        read DataAnswer
+        if [ $DataAnswer == "cancel" ]; then
+            exit 1
+        else
+            wget $DataAnswer
+        fi
+
+        echo -e "\033[0;32mUPDATE >>>\033[0m unzipping upgrade filesets"
+        unzip FileWave_macOS_Client_$VERSION*.zip
+        unzip FWWinClientUpgrade_$VERSION*.zip
+
+        echo -e "\033[0;32mUPDATE >>>\033[0m uploading upgrade filesets"
+        /usr/local/bin/FileWaveAdmin -H 127.0.0.1 -u fwadmin -p fwadmin --importFileset FileWave_macOS_Client_$VERSION*.fileset
+        /usr/local/bin/FileWaveAdmin -H 127.0.0.1 -u fwadmin -p fwadmin --importFileset FWWinClientUpgrade_$VERSION*.fileset
+
+        echo -e "\033[0;32mUPDATE >>>\033[0m cleaning up files"
+#        rm -rf FileWave_macOS_Client_$VERSION*.zip FWWinClientUpgrade_$VERSION*.zip FileWave_macOS_Client_$VERSION*.fileset FWWinClientUpgrade_$VERSION*.fileset
+    fi
+
+# Install the linux admin
+
+elif [ "$MODE" == "admin" ]; then
+    VERSION=$(/usr/local/sbin/fwxserver -V | awk '{print $2}')
+    get_linux_admin
+
+elif [ "$MODE" == "renew" ]; then
+    lets_hotname=$(ls /etc/letsencrypt/live/)
+    echo -e "\033[0;32mCERTS >>>\033[0m Renew"
+    certbot renew
+
+    echo -e "\033[0;32mCERTS >>>\033[0m Linking certs into place"
+    rm -rvf /usr/local/filewave/certs/server.crt /usr/local/filewave/certs/server.key
+    cp /etc/letsencrypt/live/*/fullchain.pem /usr/local/filewave/certs/server.crt
+    cp /etc/letsencrypt/live/*/privkey.pem /usr/local/filewave/certs/server.key
+
+    echo -e "\033[0;32mSETUP >>>\033[0m Restarting Apache"
+    /usr/local/filewave/apache/bin/apachectl restart
+    echo -e "\033[0;32mCERTS >>>\033[0m Done"
 else
     error_syntax
     exit 1
 fi
-
-
