@@ -50,3 +50,14 @@ Updates a current server to the the specified version (recomended to backup firs
 ```
 ./fw_manage.sh -m update -v 13.1.0
 ```
+### Admin
+Installs the linux admin [CLI - Command Lind Interface](https://kb.filewave.com/pages/viewpage.action?pageId=920328)
+```
+./fw_manage.sh -m admin
+```
+### Renew
+If you used the built-in setup (see above) then certbot was used to name and cert the server, a cron should also exsist to renew the cert.
+This command checks cert status, renews if needed, and moves the renwed admin certs into filewave sapce
+```
+./fw_manage.sh -m renew
+```
