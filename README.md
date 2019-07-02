@@ -1,6 +1,7 @@
 # FW_manage
 A management script for FileWave
 
+## Arguments
 1. Select a mode
    - setup
    - update
@@ -28,7 +29,13 @@ A management script for FileWave
 
 This tool must also be run as root on CentOS
 
-The average workflow is
+## Workflows
+### Average Workflow
+1. setup
+2. backup
+3. update
+
+### BETA Workflow
 1. setup
 2. backup
 3. beta
@@ -76,12 +83,13 @@ Vacuum the DB and removes logs taking up space
 ./fw_manage.sh -m clean
 ```
 ### Update
-Updates a current server to the the specified version (recommended to backup first)
+Updates a current server to the the specified version (recommended to backup first).
+It then promps if you want to also upload the upgrade filesets (This will install the linux admin app. Links from download KB required).
 ```
 ./fw_manage.sh -m update -v 13.1.0
 ```
 ### Admin
-Installs the linux admin [CLI - Command Lind Interface](https://kb.filewave.com/pages/viewpage.action?pageId=920328)
+Installs the linux admin app for  [CLI - Command Lind Interface](https://kb.filewave.com/pages/viewpage.action?pageId=920328)
 ```
 ./fw_manage.sh -m admin
 ```
