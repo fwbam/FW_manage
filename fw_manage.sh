@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
+# 2020 Jan 24 - Ben M
 
-#AWS VPC t2.large
-#53g
 
 ## Set local variables
 NOW=$(date "+%Y-%m-%d")
@@ -18,6 +17,17 @@ DEBUG=false
 OPTIONS="ab:dfh::m:r:v:"
 
 
+function do_serv_path
+{
+    cur_version=$(/usr/local/sbin/fwxserver -V |awk {'print $2'}| sed -e "s/\.//g")
+    echo -e "\033[0;32mINFO >>>\033[0m $cur_version found"
+    if [[ $cur_version -ge "1310" ]]; then
+        serv_path='/usr/local/filewave/fwxserver/'
+    else
+        serv_path='/fwxserver'
+    fi
+    echo -e "\033[0;32mINFO >>>\033[0m using path $serv_path"
+}
 ## DEFINE ERRORS
 
 function error_syntax
@@ -40,7 +50,8 @@ fi
 
 function error_fwdir
 {
-echo -e "\033[0;31mERROR >>>\033[0m /fwxserver/ is still present"
+do_serv_path
+echo -e "\033[0;31mERROR >>>\033[0m $serv_path is still present"
 echo -e "Aborting \n Try: \n $0 -m remove \n first"
 }
 
@@ -59,12 +70,12 @@ exit 1
 function install_server
 {
 echo -e "\033[0;32mSETUP >>>\033[0m Downloading Version: $VERSION"
-if [ ! -f "/FileWave_Linux_$VERSION.zip" ]; then
+if [[ ! -f "/FileWave_Linux_$VERSION.zip" ]]; then
     wget https://fwdl.filewave.com/$VERSION/FileWave_Linux_$VERSION.zip
 else
     echo -e "\033[0;32mSETUP >>>\033[0m ALREADY DOWNLOADED"
 fi
-if [ ! -f "/fwxserver-$VERSION-1.0.x86_64.rpm" ]; then
+if [[ ! -f "/fwxserver-$VERSION-1.0.x86_64.rpm" ]]; then
     unzip FileWave_Linux_$VERSION.zip
 else
     echo -e "\033[0;32mSETUP >>>\033[0m ALREADY UNZIPPED"
@@ -100,38 +111,38 @@ function var_debug
 #Permissions adapted from ChristianG fixPermissions script
 function do_permissions
 {
+    do_serv_path
     chown apache:apache /usr/local/filewave/certs/apn.* /usr/local/filewave/certs/db_symmetric_key.aes /usr/local/filewave/certs/dep.* /usr/local/filewave/certs/engage_apn_*.* /usr/local/filewave/certs/server.*
     chown postgres:daemon /usr/local/filewave/certs/postgres.*
 
     echo -n "Fixing fwxserver folder permissions"
-    chown root:wheel /fwxserver
-    find /fwxserver -maxdepth 1 -type d -exec /bin/chmod 755 {} \;
+    chown root:wheel $serv_path
+    find $serv_path -maxdepth 1 -type d -exec /bin/chmod 755 {} \;
     echo "  Done"
 
     echo -n "Fixing Data Folder Ownership"
-    chown -R root:wheel /fwxserver/Data\ Folder
+    chown -R root:wheel $serv_path/Data\ Folder
     echo "  Done"
     echo -n "Fixing Data Folder File Access Rights"
-    find /fwxserver/Data\ Folder -type f -print0|xargs -0 /bin/chmod 644
+    find $serv_path/Data\ Folder -type f -print0|xargs -0 /bin/chmod 644
     echo "  Done"
     echo -n "Fixing Data Folder Subfolder Access Rights"
-    find /fwxserver/Data\ Folder -type d -print0|xargs -0 /bin/chmod 755
+    find $serv_path/Data\ Folder -type d -print0|xargs -0 /bin/chmod 755
     echo "  Done"
 
     echo -n "Fixing DB folder permissions"
     #the apache user and group are called apache on linux, but _www on mac
     APACHENAME="apache"
     if [ "$(uname -a |grep Darwin|wc -l)" -eq "1" ] ; then APACHENAME="_www" ; fi
-    chown root:$APACHENAME /fwxserver/DB
-    chmod g+w /fwxserver/DB
+    chown root:$APACHENAME $serv_path/DB
+    chmod g+w $serv_path/DB
     echo "  Done"
 
-    version=$(/usr/local/sbin/fwxserver -V |awk {'print $2'}| sed -e "s/\.//g")
-    if [ "$version" -ge "570" ]; then
+    if [[ "$cur_version" -ge "570" ]]; then
         echo -n "Postgres installation found, fixing pg_data permissions"
-        chown -R postgres:daemon /fwxserver/DB/pg_data
-        find /fwxserver/DB/pg_data -type f -print0|xargs -0 /bin/chmod 600
-        find /fwxserver/DB/pg_data -type d -print0|xargs -0 /bin/chmod 700
+        chown -R postgres:daemon $serv_path/DB/pg_data
+        find $serv_path/DB/pg_data -type f -print0|xargs -0 /bin/chmod 600
+        find $serv_path/DB/pg_data -type d -print0|xargs -0 /bin/chmod 700
         echo "  Done"
         echo "Fixing MDM directory ownership"
         cd /usr/local/filewave
@@ -168,6 +179,7 @@ function get_linux_admin {
     yum install -y --nogpgcheck filewave-admin-$VERSION-1.0.x86_64.rpm
 
 }
+
 ## GET OPTIONS
 
 
@@ -195,18 +207,18 @@ do
 done
 shift $((OPTIND -1))
 
-if [ $DEBUG == true ]; then
+if [[ $DEBUG == true ]]; then
     var_debug
 fi
 
 # Must be root
-if [ ! $(whoami) == "root" ] ; then
+if [[ ! $(whoami) == "root" ]] ; then
     echo -e "\033[0;31mERROR >>>\033[0m Script must be run as root"
     exit 1
 fi
 
 # Centos ONLY
-if [ $FORCE == false ] && [ ! -f "/etc/centos-release" ]; then
+if [[ $FORCE == false ]] && [[ ! -f "/etc/centos-release" ]]; then
     echo -e "\033[0;31mERROR >>>\033[0m Script must be run on CentOS"
     exit 1
 fi
@@ -221,11 +233,12 @@ fi
 # FW server, certificate,
 # //ToDo system link certs from fw to certbot rather than cp
 
-if [ "$MODE" == "setup" ] && [ ! -z "$VERSION" ] && [ ! -z "$SETHOSTNAME" ]; then
-    if [ $DEBUG == true ]; then
+if [[ "$MODE" == "setup" ]] && [[ ! -z "$VERSION" ]] && [[ ! -z "$SETHOSTNAME" ]]; then
+    if [[ $DEBUG == true ]]; then
         var_debug
     fi
-    if [ ! -d "/fwxserver/" ]; then
+    do_serv_path
+    if [[ ! -d $serv_path ]]; then
         echo -e "\033[0;32mSETUP >>>\033[0m Using Hostname $SETHOSTNAME"
         echo -e "\033[0;32mSETUP >>>\033[0m Using Base Version $VERSION"
         echo -e "\033[0;32mSETUP >>>\033[0m Installing base components"
@@ -274,19 +287,20 @@ if [ "$MODE" == "setup" ] && [ ! -z "$VERSION" ] && [ ! -z "$SETHOSTNAME" ]; the
 
 # backup the current instance in a way to restore from it later
 
-elif [ "$MODE" == "backup" ]; then
+elif [[ "$MODE" == "backup" ]]; then
 
 # backup
+    do_serv_path
     echo -e "\033[0;32mBACKUP >>>\033[0m Starting Checks"
     echo -e "\033[0;32mBACKUP >>>\033[0m FW needs to be running"
-    if [ ! -f "/tmp/.s.PGSQL.9432.lock" ]; then
+    if [[ ! -f "/tmp/.s.PGSQL.9432.lock" ]]; then
         error_running
         exit 1
     else
         echo -e "Yes, it is running"
     fi
     echo -e "\033[0;32mBACKUP >>>\033[0m Is there previous backups directory"
-    if [ ! -d "/backup/" ]; then
+    if [[ ! -d "/backup/" ]]; then
         echo "No, creating it"
         mkdir /backup
     else
@@ -297,12 +311,12 @@ elif [ "$MODE" == "backup" ]; then
     NOW_VERSION=$(/usr/local/bin/fwcontrol server version | awk {'print $2'})
     DESTINATION="/backup/"$NOW"_v"$NOW_VERSION
 
-    if [ $DEBUG == true ]; then
+    if [[ $DEBUG == true ]]; then
         var_debug
     fi
 
     echo -e "\033[0;32mBACKUP >>>\033[0m Is there a valid DESTINATION"
-    if [ ! -d "$DESTINATION" ]; then
+    if [[ ! -d "$DESTINATION" ]]; then
         echo "No, creating it now"
         mkdir $DESTINATION
         mkdir $DESTINATION/DB
@@ -340,7 +354,7 @@ elif [ "$MODE" == "backup" ]; then
 
     #rsync the data folder
     echo -e "\033[0;32mBACKUP >>>\033[0m Starting rsync of Data Folder"
-    rsync -avL /fwxserver/Data\ Folder/ $DESTINATION/Data\ Folder
+    rsync -avL $serv_path/Data\ Folder/ $DESTINATION/Data\ Folder
     echo -e "\033[0;32mBACKUP >>>\033[0m rsync data folder done"
 
     #rsync the ipa folder
@@ -361,15 +375,15 @@ elif [ "$MODE" == "backup" ]; then
 
 # Erase current version
 
-elif [ "$MODE" == "remove" ]; then
-    if [ $DEBUG == true ]; then
+elif [[ "$MODE" == "remove" ]]; then
+    if [[ $DEBUG == true ]]; then
         var_debug
     fi
 
 #Destroy current version
 
 # if the force option isn't set then prompt user
-    if [ $FORCE == false ]; then
+    if [[ $FORCE == false ]]; then
         echo -e "\033[0;32mREMOVE >>>\033[0m Starting Cleaning"
         echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
         echo -e "This will totally destroy FileWave \n Type \033[0;32mYES\033[0m to continue"
@@ -377,12 +391,13 @@ elif [ "$MODE" == "remove" ]; then
         read DataAnswer
     fi
     if [ $DataAnswer == "YES" ] || [ $FORCE == true ]; then
+        do_serv_path
         echo -e "\033[0;32mREMOVE >>> DESTROY >>> \033[0m Stopping FileWave"
         /usr/local/bin/fwcontrol server stop
         sleep 5
         echo -e "\033[0;32mREMOVE >>> DESTROY >>> \033[0m Uninstalling FileWave Server"
         yum -y remove fwxserver
-        rm -rf /fwxserver
+        rm -rf $serv_path
         rm -rf /usr/local/filewave
         rm -rf /usr/local/sbin/fw*
         rm -rf /usr/local/sbin/FileWave*
@@ -403,12 +418,12 @@ fi
 # restore will want a nothing of of previous install, do remove first
 # restore will read the version from the backup, and install that version before restoring files.
 
-elif [ "$MODE" == "restore" ] && [ ! -z $RESTORE ]; then
-    if [ $DEBUG == true ]; then
+elif [[ "$MODE" == "restore" ]] && [[ ! -z $RESTORE ]]; then
+    if [[ $DEBUG == true ]]; then
         var_debug
     fi
-
-    if [ -d "/fwxserver/" ]; then
+    do_serv_path
+    if [[ -d $serv_path ]]; then
         error_fwdir
     else
         #restore backup
@@ -452,8 +467,11 @@ elif [ "$MODE" == "restore" ] && [ ! -z $RESTORE ]; then
             rm -rfv passwd
             cp -rv $restore_path/passwd .
 
+            do_serv_path
             echo -e "\033[0;32mRESTORE >>> Moving Files >>>\033[0m Data Folder..."
-            rsync -avL $restore_path/Data\ Folder/ /fwxserver/Data\ Folder
+            echo $restore_path
+            echo $serv_path
+            rsync -avL $restore_path/Data\ Folder/ $serv_path/Data\ Folder
 
             echo -e "\033[0;32mRESTORE >>> Moving Files >>>\033[0m IPA Folder..."
             rsync -avL $restore_path/ipa/ /usr/local/filewave/ipa
@@ -517,12 +535,13 @@ elif [ "$MODE" == "restore" ] && [ ! -z $RESTORE ]; then
 
 #Install a beta version
 
-elif [ "$MODE" == "beta" ] && [ ! -z "$BETAPATH" ]; then
+elif [[ "$MODE" == "beta" ]] && [[ ! -z "$BETAPATH" ]]; then
     echo -e "\033[0;32mBETA >>>\033[0m checking for fwxserver folder"
     #only install beta on top of a current version
-    if [ -d "/fwxserver/" ]; then
+    do_serv_path
+    if [[ -d $serv_path ]]; then
         #verify beta rpm
-        if [ ! -f "$BETAPATH" ] && [ ${BETAPATH: -4} == ".rpm" ]; then
+        if [[ ! -f "$BETAPATH" ]] && [[ ${BETAPATH: -4} == ".rpm" ]]; then
             echo "File not found (must be at root of drive /)! or is not a rpm"
         else
             echo -e "\033[0;32mBETA >>>\033[0m starting server"
@@ -547,9 +566,9 @@ elif [ "$MODE" == "beta" ] && [ ! -z "$BETAPATH" ]; then
 
 # Clean up unused space #LeaveNoTrace
 
-elif [ "$MODE" == "clean" ]; then
+elif [[ "$MODE" == "clean" ]]; then
 # if the force option isn't set then prompt user
-    if [ $FORCE == false ]; then
+    if [[ $FORCE == false ]]; then
         echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
         echo -e "This will totally destroy \033[0;31m FileWave and SYSTEM\033[0m logs\n"
         echo -e "It will also destroy current FW apache logs\n"
@@ -558,7 +577,7 @@ elif [ "$MODE" == "clean" ]; then
         echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
         read DataAnswer
     fi
-    if [ $DataAnswer == "YES" ] || [ $FORCE == true ]; then
+    if [[ $DataAnswer == "YES" ]] || [[ $FORCE == true ]]; then
         echo -e "\033[0;32mCLEAN >>>\033[0m Starting Clean"
         echo -e "\033[0;32mCLEAN >>>\033[0m Starting fwxserver -M checks"
         /usr/local/sbin/fwxserver -M
@@ -598,12 +617,13 @@ elif [ "$MODE" == "clean" ]; then
 
 # Update the server, update linux admin, and then upload upgrade filesets
 
-elif [ "$MODE" == "update" ] && [ ! -z "$VERSION" ]; then
+elif [[ "$MODE" == "update" ]] && [[ ! -z "$VERSION" ]]; then
     # ToDo check for a recent update (with in 1 day) before doing update
     if [ $DEBUG == true ]; then
         var_debug
     fi
-    if [ -d "/fwxserver/" ]; then
+    do_serv_path
+    if [ -d $serv_path ]; then
         install_server
     else
         error_fwdir
@@ -653,8 +673,13 @@ elif [ "$MODE" == "update" ] && [ ! -z "$VERSION" ]; then
         unzip FWWinClientUpgrade_$VERSION*.zip
 
         echo -e "\033[0;32mUPDATE >>>\033[0m uploading upgrade filesets"
-        /usr/local/bin/FileWaveAdmin -H 127.0.0.1 -u fwadmin -p fwadmin --importFileset FileWave_macOS_Client_$VERSION*.fileset
-        /usr/local/bin/FileWaveAdmin -H 127.0.0.1 -u fwadmin -p fwadmin --importFileset FWWinClientUpgrade_$VERSION*.fileset
+        local_hostname=$(hostname)
+        echo -e "Enter a FileWave admin username for \033[0;31m $local_hostname \033[0m "
+        read DataUsername
+        echo -e "Enter the password for \033[0;31m $DataUsername @ $local_hostname \033[0m "
+        read DataPassword
+        /usr/local/bin/FileWaveAdmin -H $local_hostname -u $DataUsername -p $DataPassword --importFileset FileWave_macOS_Client_$VERSION*.fileset
+        /usr/local/bin/FileWaveAdmin -H $local_hostname -u $DataUsername -p $DataPassword --importFileset FWWinClientUpgrade_$VERSION*.fileset
 
         echo -e "\033[0;32mUPDATE >>>\033[0m cleaning up files"
 #        rm -rf FileWave_macOS_Client_$VERSION*.zip FWWinClientUpgrade_$VERSION*.zip FileWave_macOS_Client_$VERSION*.fileset FWWinClientUpgrade_$VERSION*.fileset
@@ -662,11 +687,13 @@ elif [ "$MODE" == "update" ] && [ ! -z "$VERSION" ]; then
 
 # Install the linux admin
 
-elif [ "$MODE" == "admin" ]; then
+elif [[ "$MODE" == "admin" ]]; then
     VERSION=$(/usr/local/sbin/fwxserver -V | awk '{print $2}')
     get_linux_admin
 
-elif [ "$MODE" == "renew" ]; then
+# Update certbot certificates
+
+elif [[ "$MODE" == "renew" ]]; then
     lets_hotname=$(ls /etc/letsencrypt/live/)
     echo -e "\033[0;32mCERTS >>>\033[0m Renew"
     certbot renew
@@ -676,7 +703,11 @@ elif [ "$MODE" == "renew" ]; then
     cp /etc/letsencrypt/live/*/fullchain.pem /usr/local/filewave/certs/server.crt
     cp /etc/letsencrypt/live/*/privkey.pem /usr/local/filewave/certs/server.key
 
-    echo -e "\033[0;32mSETUP >>>\033[0m Restarting Apache"
+    echo -e "\033[0;32mCERTS >>> Permissions >>>\033[0m Start"
+    do_permissions
+    echo -e "\033[0;32mCERTS >>> Permissions >>>\033[0m End"
+
+    echo -e "\033[0;32mCERTS >>>\033[0m Restarting Apache"
     /usr/local/filewave/apache/bin/apachectl restart
     echo -e "\033[0;32mCERTS >>>\033[0m Done"
 else
