@@ -14,13 +14,14 @@ FORCE=false
 #SETHOSTNAME="preview.filewave.com"
 MODE="None"
 DEBUG=false
-OPTIONS="ab:dfh::m:r:v:"
+boost_path="/usr/local/etc/filewave/"
+OPTIONS="ab:dfh::m:r:v:l:"
 
 
 function do_serv_path
 {
     cur_version=$(/usr/local/sbin/fwxserver -V |awk {'print $2'}| sed -e "s/\.//g")
-    echo -e "\033[0;32mINFO >>>\033[0m $cur_version found"
+    echo -e "\033[0;32mINFO >>>\033[0m FW Server version $cur_version found"
     if [[ $cur_version -ge "1310" ]]; then
         serv_path='/usr/local/filewave/fwxserver/'
     else
@@ -33,12 +34,15 @@ function do_serv_path
 function error_syntax
 {
 echo -e "\033[0;31mERROR >>>\033[0m in statement\n"
-echo -e "$0 [-bfhmrv]"
+echo -e "$0 [-bfhmrvl]"
+echo -e "SERVER COMMANDS"
 echo -e "   [-m mode [setup -v <version> -h <hostname>] [update -v <version>] [backup] [remove] [restore -r <date>] [beta -b FILE] [clean] [admin] [renew]"
 echo -e "   [-h hostname for setup] [-v version for setup] [-r date to use in restore] [-b path to beta rpm]"
 echo -e "   [-f force] [-a aws this is an aws instance]"
-echo -e "\nThis command must also be run as root on CentOS"
 echo -e "A typical order of operations would go:\n setup, backup, beta, remove, restore, beta"
+echo -e "BOOSTER COMMANDS"
+echo -e "   [-m mode [b_setup -v <version> -h <hostname>] local update: [b_update -v <version>] remote update: [b_update -v <version> -l <path to file>] [b_remove]"
+echo -e "\nCommands must be run as root on CentOS"
 if [ -z "$(ls -A /backup/)" ]; then
     echo -e "\n\033[0;31m No backups found\033[0m "
 else
@@ -85,8 +89,43 @@ yum install -y --nogpgcheck fwxserver-$VERSION-1.0.x86_64.rpm
 
 }
 
+function install_booster
+{
+echo -e "\033[0;32mSETUP >>>\033[0m Downloading Version: $VERSION"
+if [[ ! -f "/FileWave_Linux_$VERSION.zip" ]]; then
+    wget https://fwdl.filewave.com/$VERSION/FileWave_Linux_$VERSION.zip
+else
+    echo -e "\033[0;32mSETUP >>>\033[0m ALREADY DOWNLOADED"
+fi
+if [[ ! -f "/fwxserver-$VERSION-1.0.x86_64.rpm" ]]; then
+    unzip FileWave_Linux_$VERSION.zip
+else
+    echo -e "\033[0;32mSETUP >>>\033[0m ALREADY UNZIPPED"
+fi
+echo -e "\033[0;32mSETUP >>>\033[0m Installing Version: $VERSION"
+yum install -y --nogpgcheck fwbooster-$VERSION-1.0.x86_64.rpm
+
+}
+
+function install_booster_remote ()
+{
+if [[ $DEBUG == true ]]; then
+    echo "ADDRESS IS $1"
+    echo "USER IS $2"
+    echo "PASS IS $3"
+fi
+echo -e "\033[0;32mSETUP >>>\033[0m Downloading Version: $VERSION"
+echo -e "\033[0;32mSETUP >>>\033[0m Moving $VERSION to booster $1"
+scp fwbooster-$VERSION-1.0.x86_64.rpm $2@$1:/
+echo -e "\033[0;32mSETUP >>>\033[0m Connecting and running $VERSION Update"
+ssh -t $2@$1 'yum install -y --nogpgcheck /fwbooster-$VERSION-1.0.x86_64.rpm'
+echo -e "\033[0;32mSETUP >>>\033[0m Downloading Version: $VERSION"
+
+}
+
 function var_debug
 {
+    do_serv_path
     echo -e "\033[0;33m# # # # # # # # # # # DEBUG # # # # # # # # # # # # # # # #"
     echo -e "OPTIONS ARE $OPTIONS \n "
     echo "AWS IS $AWS"
@@ -98,6 +137,10 @@ function var_debug
     echo "NOW_VERSION IS $NOW_VERSION"
     echo "RESTORE IS $RESTORE"
     echo "VERSION IS $VERSION"
+    echo "SERVER PATH IS $serv_path"
+    echo "BOOSTER PATH IS $boost_path"
+    echo "BOOSTER LIST IS $INFILE"
+
 
     echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
     echo -e "         enter to continue. Any other input will exit          "
@@ -166,7 +209,6 @@ function do_permissions
     fi
 }
 
-
 function get_linux_admin {
     # ToDo match installed version with requested version
     echo -e "\033[0;32mSETUP >>>\033[0m Downloading Linux Admin: $VERSION"
@@ -194,6 +236,7 @@ do
         m) MODE=$OPTARG;;
         r) RESTORE=$OPTARG;;
         v) VERSION=$OPTARG;;
+        l) INFILE=$OPTARG;;
         \?)
             echo "Invalid option: -$OPTARG" >&2
             error_syntax
@@ -710,6 +753,96 @@ elif [[ "$MODE" == "renew" ]]; then
     echo -e "\033[0;32mCERTS >>>\033[0m Restarting Apache"
     /usr/local/filewave/apache/bin/apachectl restart
     echo -e "\033[0;32mCERTS >>>\033[0m Done"
+
+# BOOSTER ITEMS
+
+elif [[ "$MODE" == "b_update" ]] && [[ ! -z $VERSION ]]; then
+    if [[ $DEBUG == true ]]; then
+        var_debug
+    fi
+    do_serv_path
+    if [[ -d $serv_path ]] && [[ -z $INFILE ]]; then
+        echo -e "\033[0;31mERROR >>>\033[0m This is a server. Do not install booster on server.\n Exiting"
+        exit 1
+    fi
+    if [[ -d $boost_path ]] && [[ -z $INFILE ]]; then
+        echo "INSTALL LOCAL BOOSTER"
+        install_booster
+    elif [[ -f $INFILE ]]; then
+        echo -e "\033[0;32mINFO >>>\033[0m Booster list file found: $INFILE \n"
+        echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
+        echo -e "Enter the \033[0;31musername \033[0mfor your boosters\n"
+        echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
+        read DataAnswer_boost_user
+        echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
+        echo -e "Enter the \033[0;31mpassword \033[0mfor your boosters\n"
+        echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
+        read DataAnswer_boost_pass
+        echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
+        echo -e "This correct?"
+        echo -e "SHH User: $DataAnswer_boost_user"
+        echo -e "SSH Pass: $DataAnswer_boost_pass"
+        echo -e "         enter to continue. Any other input will exit          "
+        echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #\033[0m"
+        read DataAnswer
+        if [[ $DataAnswer != "" ]] ; then
+            exit 1
+        fi
+        if [[ ! -f "/FileWave_Linux_$VERSION.zip" ]]; then
+            wget https://fwdl.filewave.com/$VERSION/FileWave_Linux_$VERSION.zip
+        else
+            echo -e "\033[0;32mSETUP >>>\033[0m ALREADY DOWNLOADED"
+        fi
+        if [[ ! -f "/fwxserver-$VERSION-1.0.x86_64.rpm" ]]; then
+            unzip FileWave_Linux_$VERSION.zip
+        else
+            echo -e "\033[0;32mSETUP >>>\033[0m ALREADY UNZIPPED"
+        fi
+        echo "INSTALL REMOTE BOOSTER"
+        while read b; do
+            install_booster_remote $b $DataAnswer_boost_user $DataAnswer_boost_pass
+        done < $INFILE
+    else
+        echo -e "\033[0;31mERROR >>>\033[0m No booster directory found."
+        echo -e "Did you mean to install a new booster with"
+        echo -e ""
+        error_syntax
+        exit 1
+     fi
+
+elif [[ "$MODE" == "b_remove" ]]; then
+    if [[ $DEBUG == true ]]; then
+        var_debug
+    fi
+# if the force option isn't set then prompt user
+    if [[ $FORCE == false ]]; then
+        echo -e "\033[0;32mREMOVE >>>\033[0m Starting Cleaning"
+        echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
+        echo -e "This will totally destroy FileWave \n Type \033[0;32mYES\033[0m to continue"
+        echo -e "# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #"
+        read DataAnswer
+    fi
+    if [ $DataAnswer == "YES" ] || [ $FORCE == true ]; then
+        echo -e "\033[0;32mREMOVE >>> DESTROY >>> \033[0m Stopping FileWave"
+        /usr/local/bin/fwcontrol booster stop
+        sleep 5
+        echo -e "\033[0;32mREMOVE >>> DESTROY >>> \033[0m Uninstalling FileWave Booster"
+        /bin/yum -y remove fwbooster
+        rm -rf /usr/local/etc/filewave
+        rm -rf /usr/local/filewave
+        rm -rf /usr/local/sbin/fw*
+        rm /sbin/fwcontrol
+        # ToDo remove certbot from /etc/crontab if it is there
+        # ToDo remove aws /etc/cloud/cloud.cfg if it is there
+
+        echo -e "\033[0;32mREMOVE >>> DESTROY >>> \033[0m Uninstalling FileWave Admin"
+        yum -y remove filewave-admin
+
+    else
+        echo -e "\033[0;31mREMOVE >>> ERROR >>> \033[0m YES not not entered. Aborting..."
+        exit 1
+fi
+
 else
     error_syntax
     exit 1
