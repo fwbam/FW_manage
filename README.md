@@ -120,9 +120,12 @@ Then run the command
 ```
 ./fw_manage.sh -m b_update -v 13.2.3 -l boosters.txt
 ```
+You will be prompted for SSH authentication credentials for the boosters.
 
 ### Remove Booster
 
 ```
 ./fw_manage.sh -m b_remove
+#or force
+./fw_manage.sh -m b_remove -f
 ```
