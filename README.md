@@ -12,6 +12,8 @@ A management script for FileWave
    - clean
    - admin
    - renew
+   - b_update
+   - b_remove
 2. Set an variable if needed
    - These can be used with any command
      - F force - Skip "are you sure" type prompts"
@@ -98,4 +100,29 @@ If you used the built-in setup (see above) then certbot was used to name and cer
 This command checks cert status, renews if needed, and moves the renwed admin certs into filewave space
 ```
 ./fw_manage.sh -m renew
+```
+
+## Booster
+
+### Update
+You have two options. 1) to update a single booster (this code can be moved to a booster and run. 2) supply a list of boosters to do a mass update.
+Single Update
+```
+./fw_manage.sh -m b_update -v 13.2.3
+```
+Mass Update
+First have a text file of booster addresses
+```
+192.168.1.45
+mybooster.company.org
+```
+Then run the command
+```
+./fw_manage.sh -m b_update -v 13.2.3 -l boosters.txt
+```
+
+### Remove Booster
+
+```
+./fw_manage.sh -m b_remove
 ```
